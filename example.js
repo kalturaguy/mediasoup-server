@@ -6,13 +6,10 @@ const fs = require('fs');
 const ip = require('ip');
 const path = require('path');
 
-const {WebRtcServer, RtspServer, ffmpeg} = require('./index.js');
+const {WebRtcServer, RtspServer} = require('./index.js');
 
 const recordingsPath = path.join(__dirname, "recordings");
 const ipAddress = ip.address();
-const streamer = new ffmpeg({
-	enableDebug: true
-});
 
 const webRtcServer = new WebRtcServer();
 webRtcServer
