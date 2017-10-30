@@ -7,10 +7,14 @@ let localStream = null;
 let peerConnection = null;
 let usePlanB = false;
 let roomId = null;
+let room=null;
+
+//var mediasoupClient = require('mediasoup-client.js')
+//import * as mediasoupClient from './mediasoup-client/dist/mediasoup-client.js'
 
 let peerConnectionRx = null;
 
-function init() {
+ function init() {
     localVideo = document.getElementById('local_video');
     remoteContainer = document.getElementById('remote_container');
     stateSpan = document.getElementById('state_span');
@@ -32,20 +36,124 @@ function init() {
         || window.webkitRTCSessionDescription
         || window.mozRTCSessionDescription;
 
-    initSocketIo();
+
+    listRooms().then ( (rooms)=> {
+        if (rooms.length>0) {
+            joinRoom(rooms[0])
+        }
+    })
+
 
     updateView();
 }
 
-function initSocketIo() {
-    socket = io();
+function joinRemoteRoom() {
+    // Join the remote Room.
+    room.join(socket.id)
+        .then((peers) =>
+        {
+            // Handle Peers already in to the Room.
+            for (const peer of peers)
+            {
+                //handlePeer(peer);
+            }
+        })
+        .then(() =>
+        {
+            // Get our mic and webcam.
+            return navigator.mediaDevices.getUserMedia(
+                {
+                    audio : true,
+                    video : true
+                });
+        })
+        .then((stream) =>
+        {
+            const audioTrack = stream.getAudioTracks()[0];
+            const videoTrack = stream.getVideoTracks()[0];
 
-    socket.on('error', function(err){
+            // Create Producers for audio and video.
+            const audioProducer = room.createProducer(audioTrack);
+            const videoProducer = room.createProducer(videoTrack);
+
+
+            // Create a Transport for receiving media from remote Peers.
+            const recvTransport = room.createTransport('recv');
+
+            // Create a Transport for sending our media.
+            const sendTransport = room.createTransport('send');
+
+            // Send our audio.
+            audioProducer.send(sendTransport)
+                .then(() => console.log('sending our mic'));
+
+            // Send our video.
+            videoProducer.send(sendTransport)
+                .then(() => console.log('sending our webcam'));
+        }).catch(e=> {
+        console.warn(e);
+    });
+}
+
+function initSocketIo(url) {
+
+    room = new mediasoupClient.Room();
+
+
+    // Be ready to send mediasoup client requests to our remote mediasoup Peer in
+// the server, and also deal with their associated responses.
+    room.on('request', (request, callback, errback) =>
+    {
+        sendRoomRequest("https://localhost:3888",request )
+            .then((response) =>
+            {
+                // Success response, so pass the mediasoup response to the local Room.
+                callback(response);
+            })
+            .catch((error) =>
+            {
+                // Error response, so pass the error to the local Room.
+                errback(error);
+            });
+    });
+
+
+// Be ready to send mediasoup client notifications to our remote mediasoup
+// Peer in the server
+    room.on('notify', (notification) =>
+    {
+        channel.send({ type: 'mediasoup-notification', body: notification });
+    });
+
+
+    socket = io(url);
+
+
+// Be ready to receive mediasoup notifications from our remote mediasoup Peer
+// in the server.
+    socket.on('message', (message) =>
+    {
+        if (message.type === 'mediasoup-notification')
+        {
+            // Pass the mediasoup notification to the local Room.
+            room.receiveNotification(message.body);
+        }
+        else
+        {
+            // Handle here app custom messages (chat, etc).
+        }
+    });
+
+    socket.on('connect', ()=> {
+        joinRemoteRoom();
+    });
+
+    socket.on('error', function (err) {
         console.error('Socket.io error:', err);
     });
 
 
-    socket.on('offer', function(sdp){
+    socket.on('offer', function (sdp) {
         console.log('Receive [offer]: ', sdp);
         let offer = new RTCSessionDescription({
             type: 'offer',
@@ -54,7 +162,7 @@ function initSocketIo() {
         setOffer(offer);
     });
 
-    socket.on('answer', function(sdp){
+    socket.on('answer', function (sdp) {
         console.log('Receive [answer]: ', sdp);
         let answer = new RTCSessionDescription({
             type: 'answer',
@@ -62,15 +170,13 @@ function initSocketIo() {
         });
         setAnswer(answer);
     });
-    fetch('/room/*').then((response)=> {
-        return response.json();
-    }).then ( rooms=> {
-        listRooms(rooms);
-    })
-}
 
+
+
+
+}
 function sendOffer(sdp) {
-    send('join', {
+    send('publish', {
         planb: usePlanB,
         roomId: roomId,
         sdp: sdp
@@ -78,7 +184,7 @@ function sendOffer(sdp) {
 }
 
 function sendAnswer(answer) {
-    send('joined', answer);
+    send('request-view', answer);
 }
 
 function send(type, data) {
@@ -86,51 +192,15 @@ function send(type, data) {
     socket.emit(type, data);
 };
 
-function appendRoom(id, name) {
-    let roomsDiv = document.getElementById('rooms');
 
-    let newTr = document.createElement("tr");
-    newTr.classList.add('room');
-    newTr.onclick = function(){
-        joinRoom(id);
-    };
-    newTr.innerHTML=`<td>${id}</td><td>${name}</td>`
-    roomsDiv.appendChild(newTr);
-}
-
-
-function joinRoom(id) {
-    roomId = id;
+function joinRoom(room) {
+    initSocketIo(room.url);
+    window.room = room;
     updateView();
     //publishVideo();
 }
 
-function listRooms(rooms) {
-    for(let id in rooms) {
-        appendRoom(id, rooms[id]);
-    }
-}
 
-function createRoom() {
-    let element = document.getElementById('newRoom');
-    let name = element.value;
-    if(!name.length) {
-        return alert('Please specify room name');
-    }
-
-    fetch('/room',{
-        method: "POST",
-        body: JSON.stringify({ name: name }),
-        headers: {
-            "Content-Type": "application/json"
-        }
-    }).then((response)=> {
-        return response.json();
-    }).then ( room=> {
-        console.log('Receive [room-created]: ', room);
-        appendRoom(room.id, room.name);
-    })
-}
 
 function publishVideo() {
     getDeviceStream({video: true, audio: true})
@@ -309,7 +379,8 @@ function setOffer(sessionDescription) {
 
 function subscribeVideo() {
     peerConnectionRx = prepareNewConnection();
-    makeAnswer();
+    send('request-view');
+    //makeAnswer();
 }
 function makeAnswer() {
     console.log('Create remote session description' );
@@ -424,7 +495,7 @@ function removeAllRemoteVideo() {
 }
 
 function updateView() {
-    if (roomId) {
+    if (window.room) {
         hideElement('roomsSelect');
         showElement('conference');
         enabelElement('disconnect_button');

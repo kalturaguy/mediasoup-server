@@ -1,19 +1,25 @@
 <!doctype html>
 <html>
 <head>
-<meta http-equiv='Content-Type' content='text/html; charset=UTF-8'>
-<title>Mediasoup Client</title>
-<style type="text/css">
-	.room {
-		cursor: pointer;
-	} 
-</style>
-<script src="/socket.io/socket.io.js"></script>
-<script src='./shim.js'>
- 
-</script>
+	<meta http-equiv='Content-Type' content='text/html; charset=UTF-8'>
+	<title>Mediasoup Client</title>
+	<style type="text/css">
+		.room {
+			cursor: pointer;
+		}
+	</style>
+	<script src="/socket.io/socket.io.js"></script>
+	<script src='./kalturaRoomsLayer.js'></script>
+	<script src='./mediasoup-client/dist/mediasoup-client.js'></script>
+	<script src='./kalturaRooms.js'></script>
+	<script  src='./shim.js'></script>
+	<script >
+        //import {init} from './shim.js'
+
+		init();
+	</script>
 </head>
-<body onload="init();">
+<body >
 	<h1>Mediasoup Client</h1>
 	<div id="roomsSelect">
 		<b>Rooms:</b>
